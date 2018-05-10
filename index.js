@@ -11,27 +11,39 @@ var errors = require('errors');
 
 var redis = new Redis(nconf.get('REDIS_URI'));
 
-var throttleKey = function (token, type) {
-  return util.format('thr:%s:%s', token.id, type);
+var durations = ['second', 'day', 'month'];
+
+var map = {
+  GET: 'find',
+  POST: 'create',
+  PUT: 'update',
+  DELETE: 'remove',
+  HEAD: 'find'
 };
 
-var throttleRules = function (token, at) {
-  return [{
-    name: 'second',
-    key: throttleKey(token, 'ss'),
-    limit: token.limits['second'],
-    expiry: at.endOf('second').unix(),
-  }, {
-    name: 'day',
-    key: throttleKey(token, 'DD'),
-    limit: token.limits['day'],
-    expiry: at.endOf('day').unix(),
-  }, {
-    name: 'month',
-    key: throttleKey(token, 'MM'),
-    limit: token.limits['month'],
-    expiry: at.endOf('month').unix()
-  }];
+var action = function (req) {
+  var method = req.method;
+  return map[method];
+};
+
+var throttleKey = function (token, name, action, duration) {
+  return util.format('throttle:%s:%s:%s:%s', token.id, name, action, duration);
+};
+
+var throttleRules = function (token, name, action, at) {
+  var tier = token.tier;
+  var limits = tier.limits[name] || tier.limits['*'] || {};
+  limits = limits[action] || limits['*'] || {};
+  var rules = [];
+  durations.forEach(function (duration) {
+    rules.push({
+      name: duration,
+      key: throttleKey(token, name, action, duration),
+      limit: limits[duration],
+      expiry: at.endOf(duration).unix(),
+    });
+  });
+  return rules;
 };
 
 var check = function (rules, done) {
@@ -47,10 +59,10 @@ var check = function (rules, done) {
   done();
 }
 
-var throttle = function (token, done) {
+var throttle = function (token, name, action, done) {
   var at = moment().utc();
-  var rootKey = throttleKey(token, '');
-  var rules = throttleRules(token, at);
+  var rootKey = throttleKey(token, name, action, '');
+  var rules = throttleRules(token, name, action, at);
   var multi = redis.multi();
   // primary check
   rules.forEach(function (rule) {
@@ -110,11 +122,10 @@ var throttle = function (token, done) {
 module.exports = function (options) {
   return function (req, res, next) {
     var token = req.token;
-    var user = req.user;
     if (!token) {
       return next();
     }
-    throttle(token, function (err) {
+    throttle(token, options.name, action(req), function (err) {
       if (!err) {
         return next();
       }
