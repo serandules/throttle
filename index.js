@@ -5,6 +5,7 @@ var moment = require('moment');
 var nconf = require('nconf');
 var util = require('util');
 var url = require('url');
+var mongoose = require('mongoose');
 var Redis = require('ioredis');
 
 var errors = require('errors');
@@ -23,19 +24,17 @@ var map = {
   HEAD: 'find'
 };
 
-var ipsLimits = {
-  find: {
-    second: 10,
-    minute: 500,
-    hour: 5000,
-    day: 50000
-  },
-  create: {
-    second: 10,
-    minute: 100,
-    hour: 500,
-    day: 1000
+var tierInfo = function (req, done) {
+  var token = req.token;
+  if (token) {
+    return done(null, token.tier, token.id)
   }
+  mongoose.model('tiers').findOne({name: 'free'}, function (err, tier) {
+    if (err) {
+      return done(err);
+    }
+    done(null, tier, 'free');
+  });
 };
 
 var action = function (req) {
@@ -43,38 +42,38 @@ var action = function (req) {
   return map[method];
 };
 
-var apisThrottleKey = function (token, name, action, duration) {
-  return util.format('throttle:%s:%s:%s:%s', token.id, name, action, duration);
+var apisThrottleKey = function (id, name, action, duration) {
+  return util.format('throttle:%s:%s:%s:%s', id, name, action, duration);
 };
 
-var apisThrottleRules = function (token, name, action, at) {
-  var tier = token.tier;
-  var limits = tier.limits[name] || tier.limits['*'] || {};
-  limits = limits[action] || limits['*'] || {};
+var apisThrottleRules = function (tier, id, name, action, at) {
+  var apis = tier.apis[name] || tier.apis['*'] || {};
+  apis = apis[action] || apis['*'] || {};
   var rules = [];
   apisDurations.forEach(function (duration) {
     rules.push({
       name: duration,
-      key: apisThrottleKey(token, name, action, duration),
-      limit: limits[duration],
+      key: apisThrottleKey(id, name, action, duration),
+      limit: apis[duration],
       expiry: at.endOf(duration).unix(),
     });
   });
   return rules;
 };
 
-var ipsThrottleKey = function (ip, action, duration) {
-  return util.format('throttle:%s:%s:%s', ip, action, duration);
+var ipsThrottleKey = function (ip, id, action, duration) {
+  return util.format('throttle:%s:%s:%s:%s', ip, id, action, duration);
 };
 
-var ipsThrottleRules = function (ip, action, at) {
-  var limits = ipsLimits[action] || ipsLimits['*'] || {};
+var ipsThrottleRules = function (tier, ip, id, action, at) {
+  var ips = tier.ips;
+  ips = ips[action] || ips['*'] || {};
   var rules = [];
   ipsDurations.forEach(function (duration) {
     rules.push({
       name: duration,
-      key: ipsThrottleKey(ip, action, duration),
-      limit: limits[duration],
+      key: ipsThrottleKey(ip, id, action, duration),
+      limit: ips[duration],
       expiry: at.endOf(duration).unix(),
     });
   });
@@ -94,10 +93,10 @@ var check = function (rules, done) {
   done();
 }
 
-var ips = function (ip, action, done) {
+var ips = function (tier, ip, id, action, done) {
   var at = moment().utc();
-  var rootKey = ipsThrottleKey(ip, action, '');
-  var rules = ipsThrottleRules(ip, action, at);
+  var rootKey = ipsThrottleKey(ip, id, action, '');
+  var rules = ipsThrottleRules(tier, ip, id, action, at);
   var multi = redis.multi();
   // primary check
   rules.forEach(function (rule) {
@@ -156,23 +155,29 @@ var ips = function (ip, action, done) {
 
 exports.ips = function () {
   return function (req, res, next) {
-    var ip = req.ip
-    ips(ip, action(req), function (err) {
-      if (!err) {
-        return next();
+    tierInfo(req, function (err, tier, id) {
+      if (err) {
+        log.error(err);
+        return next(errors.serverError())
       }
-      if (err.code !== errors.tooManyRequests().code) {
-        return next(err);
-      }
-      res.pond(err);
+      var ip = req.ip;
+      ips(tier, ip, id, action(req), function (err) {
+        if (!err) {
+          return next();
+        }
+        if (err.code !== errors.tooManyRequests().code) {
+          return next(err);
+        }
+        res.pond(err);
+      });
     });
   };
 };
 
-var apis = function (token, name, action, done) {
+var apis = function (tier, id, name, action, done) {
   var at = moment().utc();
-  var rootKey = apisThrottleKey(token, name, action, '');
-  var rules = apisThrottleRules(token, name, action, at);
+  var rootKey = apisThrottleKey(id, name, action, '');
+  var rules = apisThrottleRules(tier, id, name, action, at);
   var multi = redis.multi();
   // primary check
   rules.forEach(function (rule) {
@@ -231,18 +236,20 @@ var apis = function (token, name, action, done) {
 
 exports.apis = function (name) {
   return function (req, res, next) {
-    var token = req.token;
-    if (!token) {
-      return next();
-    }
-    apis(token, name, action(req), function (err) {
-      if (!err) {
-        return next();
+    tierInfo(req, function (err, tier, id) {
+      if (err) {
+        log.error(err);
+        return next(errors.serverError())
       }
-      if (err.code !== errors.tooManyRequests().code) {
-        return next(err);
-      }
-      res.pond(err);
+      apis(tier, id, name, action(req), function (err) {
+        if (!err) {
+          return next();
+        }
+        if (err.code !== errors.tooManyRequests().code) {
+          return next(err);
+        }
+        res.pond(err);
+      });
     });
   };
 };
