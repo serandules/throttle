@@ -6,11 +6,9 @@ var nconf = require('nconf');
 var util = require('util');
 var url = require('url');
 var mongoose = require('mongoose');
-var Redis = require('ioredis');
 
 var errors = require('errors');
-
-var redis = new Redis(nconf.get('REDIS_URI'));
+var utils = require('utils');
 
 var apisDurations = ['second', 'day', 'month'];
 
@@ -97,7 +95,7 @@ var ips = function (tier, ip, id, action, done) {
   var at = moment().utc();
   var rootKey = ipsThrottleKey(ip, id, action, '');
   var rules = ipsThrottleRules(tier, ip, id, action, at);
-  var multi = redis.multi();
+  var multi = utils.redis().multi();
   // primary check
   rules.forEach(function (rule) {
     multi.get(rule.key);
@@ -116,7 +114,7 @@ var ips = function (tier, ip, id, action, done) {
         return done(err);
       }
       // secondary check
-      multi = redis.multi();
+      multi = utils.redis().multi();
       rules.forEach(function (rule) {
         multi.set(rootKey, 0)
           .expireat(rootKey, rule.expiry)
@@ -141,7 +139,7 @@ var ips = function (tier, ip, id, action, done) {
           if (rule.ttl !== -1) {
             return updated();
           }
-          redis.expireat(rule.key, rule.expiry, updated);
+          utils.redis().expireat(rule.key, rule.expiry, updated);
         }, function (err) {
           if (err) {
             return done(err);
@@ -178,7 +176,7 @@ var apis = function (tier, id, name, action, done) {
   var at = moment().utc();
   var rootKey = apisThrottleKey(id, name, action, '');
   var rules = apisThrottleRules(tier, id, name, action, at);
-  var multi = redis.multi();
+  var multi = utils.redis().multi();
   // primary check
   rules.forEach(function (rule) {
     multi.get(rule.key);
@@ -197,7 +195,7 @@ var apis = function (tier, id, name, action, done) {
         return done(err);
       }
       // secondary check
-      multi = redis.multi();
+      multi = utils.redis().multi();
       rules.forEach(function (rule) {
         multi.set(rootKey, 0)
           .expireat(rootKey, rule.expiry)
@@ -222,7 +220,7 @@ var apis = function (tier, id, name, action, done) {
           if (rule.ttl !== -1) {
             return updated();
           }
-          redis.expireat(rule.key, rule.expiry, updated);
+          utils.redis().expireat(rule.key, rule.expiry, updated);
         }, function (err) {
           if (err) {
             return done(err);
