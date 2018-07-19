@@ -44,6 +44,10 @@ var apisThrottleKey = function (id, name, action, duration) {
   return util.format('throttle:%s:%s:%s:%s', id, name, action, duration);
 };
 
+var expiry = function (at, duration) {
+  return at.clone().endOf(duration).unix() + 1;
+};
+
 var apisThrottleRules = function (tier, id, name, action, at) {
   var apis = tier.apis[name] || tier.apis['*'] || {};
   apis = apis[action] || apis['*'] || {};
@@ -53,7 +57,7 @@ var apisThrottleRules = function (tier, id, name, action, at) {
       name: duration,
       key: apisThrottleKey(id, name, action, duration),
       limit: apis[duration],
-      expiry: at.endOf(duration).unix(),
+      expiry: expiry(at, duration)
     });
   });
   return rules;
@@ -72,7 +76,7 @@ var ipsThrottleRules = function (tier, ip, id, action, at) {
       name: duration,
       key: ipsThrottleKey(ip, id, action, duration),
       limit: ips[duration],
-      expiry: at.endOf(duration).unix(),
+      expiry: expiry(at, duration)
     });
   });
   return rules;
