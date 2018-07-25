@@ -159,7 +159,7 @@ exports.ips = function () {
   return function (req, res, next) {
     tierInfo(req, function (err, tier, id) {
       if (err) {
-        log.error(err);
+        log.error('tiers:find-one', err);
         return next(errors.serverError())
       }
       var ip = req.ip;
@@ -240,7 +240,7 @@ exports.apis = function (name) {
   return function (req, res, next) {
     tierInfo(req, function (err, tier, id) {
       if (err) {
-        log.error(err);
+        log.error('tiers:find-one', err);
         return next(errors.serverError())
       }
       apis(tier, id, name, action(req), function (err) {
