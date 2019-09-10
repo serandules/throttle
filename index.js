@@ -14,6 +14,8 @@ var apisDurations = ['second', 'day', 'month'];
 
 var ipsDurations = ['second', 'minute', 'hour', 'day'];
 
+var unthrottle = nconf.get('UNTHROTTLE');
+
 var map = {
   GET: 'find',
   POST: 'create',
@@ -157,6 +159,9 @@ var ips = function (tier, ip, id, action, done) {
 
 exports.ips = function () {
   return function (req, res, next) {
+    if (unthrottle) {
+      return next();
+    }
     tierInfo(req, function (err, tier, id) {
       if (err) {
         log.error('tiers:find-one', err);
@@ -238,6 +243,9 @@ var apis = function (tier, id, name, action, done) {
 
 exports.apis = function (name) {
   return function (req, res, next) {
+    if (unthrottle) {
+      return next();
+    }
     tierInfo(req, function (err, tier, id) {
       if (err) {
         log.error('tiers:find-one', err);
