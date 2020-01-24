@@ -38,6 +38,10 @@ var tierInfo = function (req, done) {
 };
 
 var action = function (req) {
+  var xaction = req.headers['x-action'];
+  if (xaction) {
+    return xaction;
+  }
   var method = req.method;
   return map[method];
 };
