@@ -95,7 +95,7 @@ var check = function (rules, done) {
   for (i = 0; i < length; i++) {
     rule = rules[i];
     if (rule.current > rule.limit) {
-      return done(errors.tooManyRequests('Too many requests per %s', rule.name));
+      return done(errors.tooManyRequests('Too many requests per ' + rule.name));
     }
   }
   done();
