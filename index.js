@@ -1,16 +1,11 @@
 var log = require('logger')('throttle:index');
 var async = require('async');
-var _ = require('lodash');
 var moment = require('moment');
 var nconf = require('nconf');
 var util = require('util');
-var url = require('url');
-var mongoose = require('mongoose');
 
 var errors = require('errors');
 var utils = require('utils');
-
-var apisDurations = ['second', 'day', 'month'];
 
 var ipsDurations = ['second', 'minute', 'hour', 'day'];
 
