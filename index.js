@@ -24,12 +24,12 @@ var map = {
   HEAD: 'find'
 };
 
-var tierInfo = function (req, done) {
+var tierInfo = function (Tiers, req, done) {
   var token = req.token;
   if (token) {
     return done(null, token.tier, token.id)
   }
-  mongoose.model('tiers').findOne({name: 'free'}, function (err, tier) {
+  Tiers.findOne({name: 'free'}, function (err, tier) {
     if (err) {
       return done(err);
     }
@@ -52,21 +52,6 @@ var apisThrottleKey = function (id, name, action, duration) {
 
 var expiry = function (at, duration) {
   return at.clone().endOf(duration).unix() + 1;
-};
-
-var apisThrottleRules = function (tier, id, name, action, at) {
-  var apis = tier.apis[name] || tier.apis['*'] || {};
-  apis = apis[action] || apis['*'] || {};
-  var rules = [];
-  apisDurations.forEach(function (duration) {
-    rules.push({
-      name: duration,
-      key: apisThrottleKey(id, name, action, duration),
-      limit: apis[duration],
-      expiry: expiry(at, duration)
-    });
-  });
-  return rules;
 };
 
 var ipsThrottleKey = function (ip, id, action, duration) {
@@ -161,101 +146,18 @@ var ips = function (tier, ip, id, action, done) {
   });
 };
 
-exports.ips = function () {
+module.exports = function (Tiers) {
   return function (req, res, next) {
     if (unthrottle) {
       return next();
     }
-    tierInfo(req, function (err, tier, id) {
+    tierInfo(Tiers, req, function (err, tier, id) {
       if (err) {
         log.error('tiers:find-one', err);
         return next(errors.serverError())
       }
       var ip = req.ip;
       ips(tier, ip, id, action(req), function (err) {
-        if (!err) {
-          return next();
-        }
-        if (err.code !== errors.tooManyRequests().code) {
-          return next(err);
-        }
-        res.pond(err);
-      });
-    });
-  };
-};
-
-var apis = function (tier, id, name, action, done) {
-  var at = moment().utc();
-  var rootKey = apisThrottleKey(id, name, action, '');
-  var rules = apisThrottleRules(tier, id, name, action, at);
-  var multi = utils.redis().multi();
-  // primary check
-  rules.forEach(function (rule) {
-    multi.get(rule.key);
-  });
-  multi.exec(function (err, results) {
-    if (err) {
-      return done(err);
-    }
-    var index = 0;
-    rules.forEach(function (rule) {
-      var entry = results[index++];
-      rule.current = entry[1];
-    });
-    check(rules, function (err) {
-      if (err) {
-        return done(err);
-      }
-      // secondary check
-      multi = utils.redis().multi();
-      rules.forEach(function (rule) {
-        multi.set(rootKey, 0)
-          .expireat(rootKey, rule.expiry)
-          .renamenx(rootKey, rule.key)
-          .incr(rule.key)
-          .ttl(rule.key)
-      });
-      // [[null,"OK"],[null,1],[{}],[null,1],[null,-1],[null,"OK"],[null,1],[null,0],[null,11],[null,72401],[null,"OK"],[null,1],[null,0],[null,11],[null,2059601]]
-      multi.exec(function (err, results) {
-        if (err) {
-          return done(err);
-        }
-        var index = 0;
-        rules.forEach(function (rule) {
-          var entry = results[index += 3];
-          rule.current = entry[1];
-          entry = results[index += 1];
-          rule.ttl = entry[1];
-          index++;
-        });
-        async.each(rules, function (rule, updated) {
-          if (rule.ttl !== -1) {
-            return updated();
-          }
-          utils.redis().expireat(rule.key, rule.expiry, updated);
-        }, function (err) {
-          if (err) {
-            return done(err);
-          }
-          check(rules, done);
-        });
-      });
-    });
-  });
-};
-
-exports.apis = function (name) {
-  return function (req, res, next) {
-    if (unthrottle) {
-      return next();
-    }
-    tierInfo(req, function (err, tier, id) {
-      if (err) {
-        log.error('tiers:find-one', err);
-        return next(errors.serverError())
-      }
-      apis(tier, id, name, action(req), function (err) {
         if (!err) {
           return next();
         }
