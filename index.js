@@ -5,7 +5,7 @@ var nconf = require('nconf');
 var util = require('util');
 
 var errors = require('errors');
-var utils = require('utils');
+var sera = require('sera');
 
 var ipsDurations = ['second', 'minute', 'hour', 'day'];
 
@@ -85,7 +85,7 @@ var ips = function (tier, ip, id, action, done) {
   var at = moment().utc();
   var rootKey = ipsThrottleKey(ip, id, action, '');
   var rules = ipsThrottleRules(tier, ip, id, action, at);
-  var multi = utils.redis().multi();
+  var multi = sera.redis().multi();
   // primary check
   rules.forEach(function (rule) {
     multi.get(rule.key);
@@ -104,7 +104,7 @@ var ips = function (tier, ip, id, action, done) {
         return done(err);
       }
       // secondary check
-      multi = utils.redis().multi();
+      multi = sera.redis().multi();
       rules.forEach(function (rule) {
         multi.set(rootKey, 0)
           .expireat(rootKey, rule.expiry)
@@ -129,7 +129,7 @@ var ips = function (tier, ip, id, action, done) {
           if (rule.ttl !== -1) {
             return updated();
           }
-          utils.redis().expireat(rule.key, rule.expiry, updated);
+          sera.redis().expireat(rule.key, rule.expiry, updated);
         }, function (err) {
           if (err) {
             return done(err);

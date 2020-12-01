@@ -12,7 +12,7 @@
     "nconf": "0.10.0",
     "logger": "serandules/logger#master",
     "errors": "serandules/errors#master",
-    "utils": "serandules/utils#master"
+    "sera": "serandules/sera#master"
   },
   "repository": {
     "type": "git",
